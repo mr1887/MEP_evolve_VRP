@@ -37,11 +37,18 @@ def build_evolution_prompt(
     # Metacognitive Mandate (M)
     # Giải thích cho LLM biết nó đang làm gì
     metacognitive_mandate = """You are an expert algorithm designer specializing in Vehicle Routing Problems (VRP).
-You are evolving the `select_parents` function used inside the Hybrid Genetic Search (HGS) algorithm
-implemented by the PyVRP library (version 0.14.x).
+You are proposing variants of a `select_parents` heuristic for a VRP evolutionary-search prototype.
+IMPORTANT: this repository currently evaluates candidates in a custom GA + PyVRP LocalSearch evaluator,
+not in the original HGS implementation from the PyVRP+ paper. Do not claim otherwise.
 
-YOUR TASK: Create a NEW and IMPROVED version of the `select_parents` function by combining
-the best ideas from two parent heuristics and adding your own innovations.
+YOUR TASK: Propose a testable variant of `select_parents` by studying two parent heuristics.
+Prefer a small, motivated change over adding complexity without evidence.
+
+DOMAIN-AWARE KNOWLEDGE (structured guidance; examples, not a claim these are verbatim paper prompts):
+- Kp — Common pitfalls: excessive selection pressure can collapse population diversity; purely random selection can ignore solution quality; repeated selection of the same individual can reduce exploration.
+- Ks — Mitigation strategies: balance quality and diversity; avoid selecting the same parent twice when population size permits; use bounded sampling/rank-aware selection; handle infeasible solutions consistently through the supplied cost evaluator.
+- Kt — Problem-specific traps: VRP solutions are structured route sets, not arbitrary scalar genomes; penalised cost can rank infeasible and feasible solutions differently; PyVRP route APIs differ by version. Do not mutate solutions or assume route iteration yields plain integers.
+These items guide reasoning only. The LLM's explanation is not evidence of improvement; evaluate every candidate experimentally.
 
 IMPORTANT CONSTRAINTS:
 - The function MUST have this exact signature:
