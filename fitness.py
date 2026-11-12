@@ -204,7 +204,7 @@ def evaluate_single_run(
             # Không fallback âm thầm về hai cá thể tốt nhất: heuristic lỗi thì
             # lần đánh giá phải thất bại, tránh thưởng cho code không hợp lệ.
             p1, p2 = select_parents_func(population, rng, cost_eval)
-            if p1 not in population or p2 not in population:
+            if not any(p1 is sol for sol in population) or not any(p2 is sol for sol in population):
                 raise ValueError('select_parents phải trả về hai nghiệm thuộc population.')
 
             # (b) Crossover: tạo con cái
