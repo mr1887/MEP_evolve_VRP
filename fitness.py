@@ -127,18 +127,11 @@ def order_crossover(parent1_routes, parent2_routes, num_clients, py_rng):
 
 
 def build_solution_from_routes(data, routes: List[List[int]]) -> Solution:
-    """
-    Tạo Solution object từ danh sách tuyến đường.
-    Dùng PyVRP Model để xây dựng nghiệm hợp lệ.
-    """
+    """Build a PyVRP Solution; propagate invalid offspring errors instead of hiding them."""
     try:
-        # Tạo Solution trực tiếp từ routes
-        # Mỗi route là list client IDs đã thăm
-        sol = Solution(data, routes)
-        return sol
+        return Solution(data, routes)
     except Exception as exc:
-        # Không che giấu lỗi crossover bằng cách âm thầm thay nghiệm ngẫu nhiên.
-        raise ValueError(f'Không thể dựng Solution từ offspring routes: {exc}') from exc
+        raise ValueError(f"Invalid offspring routes: {exc}") from exc
 
 
 def evaluate_single_run(
