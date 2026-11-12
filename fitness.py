@@ -1,5 +1,5 @@
 """
-fitness.py — Đánh giá fitness của một heuristic trên các instance VRP.
+fitness.py — Đánh giá heuristic trong evaluator GA thử nghiệm trên các instance VRP.
 
 Đây chính là hàm: f(h, D) = Σᵢ Performance(h, dᵢ)
 
@@ -10,7 +10,7 @@ Giải pháp: Ta tự xây dựng một vòng lặp GA đơn giản:
   1. Dùng PyVRP's LocalSearch để cải thiện mỗi nghiệm
   2. Dùng hàm select_parents (do LLM sinh ra) để chọn cha mẹ
   3. Dùng Order Crossover (OX) tự viết để tạo con cái
-  4. Dùng cơ chế cạnh tranh sống sót giữa con cái và cha mẹ
+  4. Thay cá thể tệ nhất nếu con tốt hơn
 
 Quy trình:
 1. Với mỗi instance VRP dᵢ trong tập D:
@@ -310,7 +310,7 @@ def evaluate_heuristic(
 
         inst_costs = []
         for run_idx in range(config.NUM_EVAL_RUNS):
-            seed = 42 + run_idx * 7
+            seed = config.BASE_RANDOM_SEED + run_idx
             cost = evaluate_single_run(
                 select_parents_func, data, seed, config.HGS_TIME_LIMIT
             )
