@@ -80,7 +80,7 @@ def run_evolution():
     # 1. Kiểm tra API key
     if not config.GEMINI_API_KEY:
         print("\n❌ LỖI: Bạn chưa nhập API key!")
-        print("   Mở file config.py và thay 'YOUR_API_KEY_HERE' bằng API key thực.")
+        print("   Đặt biến môi trường GEMINI_API_KEY trước khi chạy.")
         print("   Lấy API key miễn phí tại: https://aistudio.google.com/apikey")
         return
 
