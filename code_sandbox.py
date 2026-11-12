@@ -154,6 +154,10 @@ def quick_smoke_test(func, data, rng_class, cost_eval_class, solution_class) -> 
             return False, f"Hàm phải trả về tuple 2 phần tử, nhận được: {type(result)}"
 
         p1, p2 = result
+        if not any(p1 is sol for sol in population) or not any(p2 is sol for sol in population):
+            return False, 'Hai parent phải là phần tử thuộc population đầu vào.'
+        if len(population) > 1 and p1 is p2:
+            return False, 'Hai parent phải khác nhau khi population có ít nhất hai nghiệm.'
         # Kiểm tra p1, p2 có phải Solution không (dùng duck typing)
         if not hasattr(p1, "is_feasible") or not hasattr(p2, "is_feasible"):
             return False, "Kết quả không phải Solution objects"
