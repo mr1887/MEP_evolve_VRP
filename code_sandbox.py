@@ -1,5 +1,5 @@
 """
-code_sandbox.py — Kiểm tra và thực thi code được LLM sinh ra một cách an toàn.
+code_sandbox.py — Kiểm tra cú pháp/chữ ký và smoke-test code do LLM sinh.\nLƯU Ý: exec() trong tiến trình Python KHÔNG phải sandbox bảo mật. Chỉ chạy code từ nguồn tin cậy.
 
 Bước này tương ứng với phần "valid. check" trong giai đoạn ACT của sơ đồ.
 - Kiểm tra cú pháp (syntax check)
