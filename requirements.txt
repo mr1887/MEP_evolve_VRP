@@ -1,0 +1,2 @@
+pyvrp>=0.14,<0.15
+google-genai>=1.0
