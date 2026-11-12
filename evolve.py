@@ -11,7 +11,7 @@ evolve.py — Vòng lặp tiến hóa chính (Main Evolution Loop).
               4. Validate & compile h'
               5. Đánh giá fitness f(h', D)
               6. Cập nhật quần thể: SelectSurvivors(P^t ∪ O^t; N)
-  Phase III → Chọn h* = argmax f(h) — Best-of-N
+  Phase III → Chọn heuristic có chi phí đánh giá thấp nhất
 """
 
 import os
@@ -54,7 +54,7 @@ def save_code_to_file(code: str, generation: int, index: int):
 def print_banner():
     print("""
 +==============================================================+
-|   LLM-DRIVEN EVOLUTIONARY HEURISTIC GENERATION FOR VRP      |
+|   LLM-DRIVEN HEURISTIC EVOLUTION PROTOTYPE FOR VRP      |
 |                                                              |
 |   Phase I  : Domain-Aware Initialization                     |
 |   Phase II : LLM Generation (Evolve Loop)                    |
@@ -78,7 +78,7 @@ def run_evolution():
     print("=" * 60)
 
     # 1. Kiểm tra API key
-    if config.GEMINI_API_KEY == "YOUR_API_KEY_HERE":
+    if not config.GEMINI_API_KEY:
         print("\n❌ LỖI: Bạn chưa nhập API key!")
         print("   Mở file config.py và thay 'YOUR_API_KEY_HERE' bằng API key thực.")
         print("   Lấy API key miễn phí tại: https://aistudio.google.com/apikey")
@@ -135,7 +135,7 @@ def run_evolution():
     print(f"  Cấu hình: {config.NUM_GENERATIONS} thế hệ × "
           f"{config.OFFSPRING_PER_GENERATION} offspring/thế hệ")
     print(f"  Quần thể tối đa: {config.POPULATION_SIZE} cá thể")
-    print(f"  Thời gian HGS/instance: {config.HGS_TIME_LIMIT}s × "
+    print(f"  Thời gian evaluator GA/instance: {config.HGS_TIME_LIMIT}s × "
           f"{config.NUM_EVAL_RUNS} lần × {len(config.VRP_INSTANCES)} instances")
 
     context_notes = ""  # ε — thông tin ngữ cảnh bổ sung
@@ -253,7 +253,7 @@ def run_evolution():
     # PHASE III: SOLUTION SELECTION — h* = argmax f(h)
     # ==================================================================
     print("\n" + "=" * 60)
-    print("  PHASE III: SOLUTION SELECTION — Best-of-N")
+    print("  PHASE III: BEST HEURISTIC FOUND")
     print("=" * 60)
 
     best = pop.get_best()
