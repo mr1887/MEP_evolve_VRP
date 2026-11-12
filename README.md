@@ -1,169 +1,142 @@
 # MEP_evolve_VRP
 
-Khung thử nghiệm tiến hóa heuristic `select_parents` cho bài toán Vehicle Routing Problem (VRP), sử dụng LLM để đề xuất các phiên bản mã Python mới và đánh giá chúng bằng một bộ giải VRP tự xây dựng trên nền các thành phần tìm kiếm của PyVRP.
+Prototype tiến hóa heuristic `select_parents` cho Vehicle Routing Problem (VRP), sử dụng LLM (Gemini) để đề xuất mã heuristic mới theo chu trình Reason–Act–Reflect.
 
-> **Trạng thái tái hiện:** Đây là một prototype nghiên cứu theo ý tưởng LLM-driven heuristic evolution. Chưa đủ căn cứ để xem repository là bản tái hiện trung thực/toàn bộ phương pháp MEP trong bài báo PyVRP+. Đặc biệt, `fitness.py` hiện đánh giá heuristic trong một GA tùy chỉnh có OX crossover, không phải trong nguyên bản Hybrid Genetic Search (HGS) của PyVRP+.
+> **Phạm vi và giới hạn quan trọng:** Repository hiện tiến hóa riêng hàm `select_parents`. Bộ đánh giá trong `fitness.py` là **GA tùy chỉnh + PyVRP LocalSearch + Order Crossover (OX)**, không phải Hybrid Genetic Search (HGS) nguyên bản của PyVRP+ paper. Vì vậy, kết quả hiện tại chỉ đánh giá heuristic trong evaluator tùy chỉnh này; không được diễn giải là tái lập trực tiếp kết quả HGS trong bài báo.
 
-## 1. Mục tiêu
-
-Repository tập trung vào một thành phần của HGS:
-
-- `select_parents`: chọn hai nghiệm VRP làm cha mẹ để tạo nghiệm con.
-- LLM (Gemini) nhận mã của hai heuristic cha mẹ, phân tích và sinh một phiên bản `select_parents` mới.
-- Mã mới được kiểm tra cú pháp, biên dịch, smoke-test và đánh giá trên các instance VRP.
-- Các heuristic có fitness tốt được giữ trong quần thể để tiếp tục tiến hóa.
-
-Phạm vi này chỉ nhắm tới `select_parents`; nó không tái hiện đồng thời các thành phần `select_survivors` và `update_penalties` của PyVRP+.
-
-## 2. Kiến trúc tổng thể
+## 1. Cấu trúc
 
 ```text
-base_heuristic.py
-      |
-      v
-population.py -------------------------------+
-      | chọn hai heuristic cha mẹ            |
-      v                                      |
-prompt_builder.py                            |
-      | tạo prompt Reason-Act-Reflect        |
-      v                                      |
-llm_client.py                                |
-      | gọi Gemini, trích code và reflection |
-      v                                      |
-code_sandbox.py                              |
-      | validate, compile, smoke test        |
-      v                                      |
-fitness.py                                   |
-      | đánh giá select_parents trong        |
-      | GA tùy chỉnh + PyVRP LocalSearch     |
-      v                                      |
-population.py                                |
-      | thêm offspring, giữ top-N            |
-      +--------------------------------------+
-      |
-      v
-evolve.py: lặp qua các thế hệ và lưu heuristic tốt nhất
+MEP_evolve_VRP/
+├── config.py             # Tham số, đường dẫn và cấu hình Gemini
+├── base_heuristic.py     # Heuristic select_parents ban đầu h0
+├── prompt_builder.py     # Prompt Reason–Act–Reflect + tri thức miền Kp/Ks/Kt
+├── llm_client.py         # Gọi Gemini, trích code và reflection
+├── code_sandbox.py       # AST, compile và smoke test (không phải sandbox bảo mật)
+├── fitness.py            # Evaluator GA tùy chỉnh, OX và PyVRP LocalSearch
+├── population.py         # Quần thể các chương trình heuristic
+├── evolve.py             # Điều phối tiến hóa
+├── requirements.txt      # Dependencies
+├── .env.example          # Ví dụ biến môi trường
+├── data/                 # VRP benchmark instances
+├── generated_code/       # Code do LLM sinh
+└── results/              # Checkpoint, quần thể cuối và heuristic tốt nhất
 ```
 
-## 3. Các module
+## 2. Hai cấp độ "parent" cần phân biệt
 
-| File | Trách nhiệm |
-|---|---|
-| `base_heuristic.py` | Khai báo heuristic khởi tạo `h0`: tournament selection với tournament size tối đa 5, xếp hạng theo penalised cost. |
-| `prompt_builder.py` | Tạo prompt cho Gemini, đưa vào hai heuristic cha, fitness, thế hệ hiện tại, best fitness và ghi chú ngữ cảnh; yêu cầu đầu ra theo Reason → Act → Reflect. |
-| `llm_client.py` | Gọi Gemini API, thử lại khi lỗi, trích xuất khối code Python và phần reflection từ phản hồi. |
-| `code_sandbox.py` | Phân tích cú pháp AST, kiểm tra sự tồn tại/chữ ký cơ bản của `select_parents`, compile và chạy smoke test. |
-| `fitness.py` | Đọc instance VRP; tạo quần thể nghiệm; gọi heuristic chọn cha mẹ; tạo con bằng Order Crossover (OX); cải thiện bằng PyVRP LocalSearch; tính chi phí trung bình. |
-| `population.py` | Lưu các heuristic cùng code, fitness và metadata; chọn hai heuristic cha mẹ; giữ tối đa `max_size` heuristic có fitness thấp nhất. |
-| `evolve.py` | Điều phối các phase: khởi tạo, sinh offspring qua LLM, kiểm tra, đánh giá, cập nhật quần thể, checkpoint và lưu heuristic tốt nhất. |
-| `data/X-n101-k25.vrp` | Instance CVRP X-n101-k25 được commit trong repository. |
+1. **Heuristic parents:** hai chương trình `select_parents` được `Population.select_two_parents()` chọn để đưa cho LLM. Đây là hai cá thể trong quần thể tiến hóa MEP.
+2. **Solution parents:** hai nghiệm VRP mà hàm `select_parents(population, rng, cost_evaluator)` do LLM tạo ra chọn trong population nghiệm của evaluator.
 
-Các module trên import `config` để lấy API key, đường dẫn dữ liệu, danh sách instance và tham số chạy. **Tại thời điểm viết README, file `config.py` không có trong nhánh `main` mà connector đọc được.** Vì vậy cấu hình và hướng dẫn chạy end-to-end chưa thể được xác minh từ repository hiện tại.
+Hai thao tác có tên gần giống nhưng hoạt động ở hai tầng khác nhau.
 
-## 4. Luồng hoạt động chi tiết
+## 3. Luồng chương trình
 
-### Phase I — Khởi tạo
+1. Đọc cấu hình và benchmark instance.
+2. Compile, smoke-test và đánh giá heuristic gốc `h0`.
+3. Khởi tạo quần thể chương trình heuristic.
+4. Với mỗi thế hệ:
+   - Chọn hai heuristic cha mẹ.
+   - Tạo structured prompt, cung cấp code/fitness và ghi chú thế hệ trước.
+   - Gemini thực hiện Reason → Act → Reflect và sinh code mới.
+   - AST/compile/smoke-test code.
+   - Đánh giá heuristic trong evaluator tùy chỉnh.
+   - Thêm offspring hợp lệ và giữ tối đa N heuristic có fitness thấp nhất.
+5. Lưu checkpoint và heuristic có fitness tốt nhất trong quần thể.
 
-1. Kiểm tra Gemini API key trong cấu hình.
-2. Đọc các instance VRP được cấu hình.
-3. Compile heuristic gốc `h0`.
-4. Chạy smoke test.
-5. Đánh giá fitness của `h0`.
-6. Tạo quần thể heuristic ban đầu.
+## 4. Domain-aware prompt
 
-### Phase II — Tiến hóa
+Prompt cung cấp ba nhóm tri thức định hướng:
 
-Với mỗi thế hệ và mỗi offspring:
+- **Kp — Common pitfalls:** các hạn chế thường gặp, ví dụ áp lực chọn lọc quá mạnh làm giảm đa dạng.
+- **Ks — Mitigation strategies:** hướng giảm thiểu, ví dụ cân bằng chất lượng và đa dạng.
+- **Kt — Problem-specific traps:** đặc thù VRP/PyVRP, ví dụ nghiệm là tập tuyến chứ không phải vector số tùy ý, và API route có thể thay đổi theo phiên bản.
 
-1. `Population.select_two_parents()` chọn hai **heuristic cha mẹ** (hai chương trình `select_parents`).
-2. `build_evolution_prompt()` ghép mã cha mẹ và ngữ cảnh thành prompt.
-3. Gemini thực hiện nhiệm vụ Reason–Act–Reflect và sinh code heuristic mới.
-4. `compile_heuristic()` kiểm tra và biên dịch code.
-5. `quick_smoke_test()` kiểm tra khả năng gọi hàm và dạng kết quả cơ bản.
-6. `evaluate_heuristic()` đo fitness bằng cách chạy bộ đánh giá trong `fitness.py`.
-7. Offspring hợp lệ được thêm vào quần thể.
-8. `select_survivors()` giữ lại tối đa N heuristic có chi phí trung bình thấp nhất.
+Các mục này trong repo là tri thức hướng dẫn do nhóm biên soạn để mô phỏng tinh thần Domain-Aware Initialization; không nên tuyên bố chúng là bản sao nguyên văn prompt/knowledge base của tác giả nếu chưa đối chiếu phụ lục và mã nguồn gốc.
 
-### Phase III — Chọn kết quả
+## 5. Cấu hình mặc định
 
-Chọn heuristic có fitness thấp nhất trong quần thể cuối, lưu code và lưu quần thể/checkpoint.
+Các tham số tiến hóa được đặt gần với ngân sách được mô tả trong bài báo: 10 thế hệ, 10 offspring mỗi thế hệ, quần thể sống sót tối đa 5 heuristic. Số lần đánh giá mỗi instance mặc định là 5 để đo biến thiên; đây là số lần chạy evaluator cho từng heuristic, **không đồng nghĩa với 5 lần chạy độc lập toàn bộ quá trình tiến hóa MEP**.
 
-**Chú ý hai cấp độ chọn cha mẹ:**
+| Biến | Mặc định | Ý nghĩa |
+|---|---:|---|
+| `NUM_GENERATIONS` | 10 | Số thế hệ |
+| `POPULATION_SIZE` | 5 | Kích thước quần thể heuristic tối đa |
+| `OFFSPRING_PER_GENERATION` | 10 | Số heuristic mới yêu cầu LLM sinh mỗi thế hệ |
+| `HGS_TIME_LIMIT` | 10 giây | Tên biến legacy; thực tế là thời gian chạy evaluator GA tùy chỉnh trên mỗi instance/run |
+| `NUM_EVAL_RUNS` | 5 | Số seed đánh giá mỗi heuristic trên mỗi instance |
+| `VRP_INSTANCES` | X-n101-k25.vrp | Benchmark hiện được cấu hình mặc định |
 
-- `Population.select_two_parents()`: chọn hai *chương trình heuristic* để LLM tham khảo khi tạo chương trình mới.
-- Hàm `select_parents()` do LLM sinh: chọn hai *nghiệm VRP* trong quần thể nghiệm của bộ đánh giá.
+Có thể override các giá trị bằng biến môi trường. Ví dụ:
 
-Đây là hai thao tác khác nhau.
-
-## 5. Cách tính fitness hiện tại
-
-Trong `fitness.py`, fitness được tính là chi phí trung bình trên các instance và các lần chạy; **giá trị thấp hơn được xem là tốt hơn**.
-
-Bộ đánh giá hiện tại không gọi một API `pyvrp.solve()` có thể cắm trực tiếp `select_parents`. Thay vào đó, code tự xây dựng vòng lặp GA:
-
-1. Tạo 20 nghiệm ngẫu nhiên và cải thiện bằng PyVRP LocalSearch.
-2. Gọi heuristic `select_parents` để lấy hai nghiệm cha mẹ.
-3. Dùng Order Crossover (OX) tự cài đặt trên danh sách khách hàng đã làm phẳng.
-4. Cải thiện nghiệm con bằng LocalSearch.
-5. Nếu con tốt hơn cá thể tệ nhất, thay thế cá thể đó.
-
-Do đó, fitness hiện đo hiệu quả của `select_parents` **trong GA tùy chỉnh này**. Không nên diễn giải kết quả đó thành hiệu quả của heuristic trong HGS gốc nếu chưa thay bộ đánh giá bằng đúng HGS/crossover và cơ chế liên quan của bài báo.
+```bash
+NUM_GENERATIONS=2 OFFSPRING_PER_GENERATION=2 NUM_EVAL_RUNS=2 EVALUATION_TIME_LIMIT=3 python evolve.py
+```
 
 ## 6. Cài đặt và chạy
 
-Repository hiện thiếu `config.py` trong nhánh `main`, trong khi các module chính import file này. Vì vậy, hướng dẫn chạy hoàn chỉnh chưa thể cung cấp một cách đáng tin cậy.
-
-Các dependency thể hiện trực tiếp qua imports gồm:
-
-- Python
-- `pyvrp`
-- `google-genai` (module `google.genai`)
-- Các thư viện chuẩn Python
-
-Trước khi chạy cần khôi phục/bổ sung `config.py` với ít nhất các cấu hình mà code đang tham chiếu:
-
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL`
-- `DATA_DIR`
-- `VRP_INSTANCES`
-- `POPULATION_SIZE`
-- `NUM_GENERATIONS`
-- `OFFSPRING_PER_GENERATION`
-- `HGS_TIME_LIMIT`
-- `NUM_EVAL_RUNS`
-- `GENERATED_CODE_DIR`
-- `RESULTS_DIR`
-
-Không commit API key trực tiếp lên GitHub. Nên đọc key từ biến môi trường hoặc file `.env` không được commit.
-
-Sau khi bổ sung cấu hình và xác nhận dependency tương thích, entry point dự kiến là:
+Yêu cầu Python tương thích với PyVRP 0.14.x.
 
 ```bash
+python -m venv .venv
+# Windows PowerShell:
+.venv\\Scripts\\Activate.ps1
+# macOS/Linux:
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+Đặt API key Gemini trong môi trường, không ghi key vào Git:
+
+**Windows PowerShell**
+```powershell
+$env:GEMINI_API_KEY="YOUR_API_KEY"
 python evolve.py
 ```
 
-Lệnh này là entry point được khai báo trong `evolve.py`; chưa được xác nhận chạy thành công trên một môi trường sạch.
+**macOS/Linux**
+```bash
+export GEMINI_API_KEY="YOUR_API_KEY"
+python evolve.py
+```
 
-## 7. Hạn chế kỹ thuật cần xử lý
+Có thể đặt model bằng biến môi trường `GEMINI_MODEL`. File `.env.example` chỉ là mẫu; code hiện tại không tự đọc file `.env`.
 
-1. **Chưa dùng HGS gốc làm evaluator.** `fitness.py` sử dụng GA tùy chỉnh và OX crossover; kết quả không thể so sánh trực tiếp với kết quả HGS trong bài báo.
-2. **Chưa có cấu hình chạy được trong repository hiện tại.** `config.py` được import nhưng không có trong nhánh `main` mà README này kiểm tra.
-3. **Smoke test còn yếu.** Nó kiểm tra tuple hai phần tử và một vài thuộc tính, nhưng chưa xác nhận hai parent thuộc population, không trùng nhau khi có thể, hay kiểm tra các invariant của nghiệm.
-4. **`code_sandbox.py` chưa phải sandbox an toàn.** `exec(code, namespace)` vẫn chạy với builtins mặc định; chặn một số import bằng AST không đủ để cô lập mã không tin cậy. Chỉ chạy code LLM trong môi trường cô lập thực sự.
-5. **OX có thể che giấu lỗi tạo nghiệm.** `build_solution_from_routes()` bắt mọi exception và thay bằng nghiệm ngẫu nhiên, khiến lỗi crossover/solution construction có thể không được phản ánh rõ trong kết quả.
-6. **Thiết kế thí nghiệm cần được kiểm soát.** Cần báo cáo nhiều seed, mean/std hoặc khoảng tin cậy, cùng benchmark train/validation/test tách biệt; đồng thời đảm bảo các heuristic được so sánh dùng cùng ngân sách thời gian và điều kiện chạy.
-7. **Quản lý quần thể heuristic khác với chọn cha mẹ nghiệm VRP.** Cần mô tả rõ hai tầng lựa chọn này trong báo cáo và slide.
+## 7. Đầu ra
 
-## 8. Những bước nên làm tiếp theo để tăng độ trung thực với bài báo
+- `generated_code/`: code heuristic sinh theo từng thế hệ.
+- `results/checkpoint.json`: quần thể sau mỗi thế hệ.
+- `results/best_select_parents.py`: heuristic có fitness thấp nhất được tìm thấy.
+- `results/final_population.json`: quần thể cuối.
 
-- Khôi phục cấu hình và khóa phiên bản dependency để dự án chạy tái lập được.
-- Tích hợp heuristic vào đúng HGS evaluator mà bài báo sử dụng; nếu không thể, ghi rõ đây là evaluator thay thế và không tuyên bố tái lập kết quả HGS.
-- Xác minh cách tính fitness và selection/survivor policy so với mô tả gốc của MEP.
-- Bổ sung kiểm thử đơn vị cho các trường hợp population nhỏ, nghiệm trùng, nghiệm không khả thi và lỗi crossover.
-- Chạy baseline và heuristic mới trên cùng instance, cùng seed, cùng thời gian; lưu kết quả từng lần chạy.
-- Tách tập tiến hóa và tập kiểm thử độc lập để kiểm tra khả năng tổng quát hóa.
+## 8. Những điểm đã được gia cố trong prototype
 
-## 9. Trạng thái xác minh
+- Thêm `config.py` và lấy API key từ biến môi trường.
+- Đặt mặc định 10 thế hệ, 10 offspring/thế hệ, population tối đa 5.
+- Crossover OX kiểm tra hai parent có cùng hoán vị khách hàng và điền gene theo thứ tự OX chuẩn.
+- Không âm thầm thay offspring lỗi bằng nghiệm ngẫu nhiên.
+- Không âm thầm thay heuristic lỗi bằng hai nghiệm tốt nhất.
+- Không gán chi phí giả bằng hệ số phạt tùy ý khi không có nghiệm khả thi.
+- Smoke test kiểm tra hai parent thuộc population và khác nhau khi có thể.
+- Không thay đổi global random seed khi chọn heuristic parents.
 
-README này được viết dựa trên mã nguồn đọc được ở nhánh `main`. Chưa thực thi repository end-to-end trong môi trường sạch; do thiếu `config.py`, không thể xác nhận lệnh chạy thành công hoặc xác nhận các con số kết quả thực nghiệm.
+## 9. Hạn chế còn tồn tại — không được bỏ qua khi báo cáo
+
+1. **Evaluator không phải HGS gốc.** Đây là khác biệt lớn nhất so với bài báo. Muốn tái hiện kết quả PyVRP+, cần tích hợp hook `select_parents` vào đúng HGS implementation/fork mà bài báo sử dụng, cùng crossover, local search, survivor management và penalty adaptation tương ứng.
+2. **Benchmark hiện chỉ có một instance được cấu hình.** Một instance CVRP không đủ để kết luận khả năng tổng quát hóa trên nhiều biến thể VRP.
+3. **Chưa tự động chạy nhiều lần tiến hóa MEP độc lập.** `NUM_EVAL_RUNS` chỉ lặp đánh giá fitness của mỗi heuristic.
+4. **Khởi tạo quần thể chỉ có h0.** Các offspring đầu có thể được tạo từ cùng một heuristic cha mẹ cho đến khi có thêm cá thể hợp lệ.
+5. **Code LLM vẫn được thực thi bằng `exec()`.** AST check và namespace riêng không tạo thành sandbox an toàn. Chỉ chạy với code đáng tin cậy; nghiên cứu nghiêm túc cần process/container cô lập và giới hạn tài nguyên.
+6. **Fitness theo thời gian có thể nhiễu.** Cần giữ cùng benchmark, seed, giới hạn thời gian và phiên bản dependency cho mọi heuristic; lưu log từng lần chạy.
+7. **Cần kiểm thử tích hợp trên môi trường sạch.** README không khẳng định dự án đã được chạy end-to-end trên máy mới.
+
+## 10. Để tiến gần hơn tới bài báo
+
+- Xác định và dùng đúng mã HGS/PyVRP+ gốc mà bài báo dùng; không thay bằng GA tùy chỉnh nếu muốn so sánh trực tiếp.
+- Đối chiếu chính xác heuristic gốc và heuristic tiến hóa trong phụ lục/mã nguồn bài báo.
+- Dùng đúng benchmark/biến thể VRP, ngân sách đánh giá, số seed và tiêu chí fitness.
+- Tách dữ liệu tiến hóa và dữ liệu kiểm thử độc lập.
+- Báo cáo từng seed, mean, standard deviation và mức cải thiện so với baseline.
+- Ghi lại prompt, model/version, API calls, code từng thế hệ và lỗi validation để đảm bảo khả năng tái lập.
 
