@@ -3,10 +3,9 @@ fitness.py — Đánh giá heuristic trong evaluator GA thử nghiệm trên cá
 
 Đây chính là hàm: f(h, D) = Σᵢ Performance(h, dᵢ)
 
-PyVRP 0.14 dùng Iterated Local Search (ILS), KHÔNG có Genetic Algorithm (GA)
-nên không có tham số select_parents trong pyvrp.solve().
-
-Giải pháp: Ta tự xây dựng một vòng lặp GA đơn giản:
+LƯU Ý: evaluator dưới đây là GA tùy chỉnh, KHÔNG phải HGS gốc của bài báo.
+PyVRP 0.14 không cung cấp hook select_parents qua pyvrp.solve().
+Evaluator này chỉ dùng để thử nghiệm prototype; không thể tuyên bố tái lập HGS.
   1. Dùng PyVRP's LocalSearch để cải thiện mỗi nghiệm
   2. Dùng hàm select_parents (do LLM sinh ra) để chọn cha mẹ
   3. Dùng Order Crossover (OX) tự viết để tạo con cái
@@ -137,10 +136,9 @@ def build_solution_from_routes(data, routes: List[List[int]]) -> Solution:
         # Mỗi route là list client IDs đã thăm
         sol = Solution(data, routes)
         return sol
-    except Exception:
-        # Nếu không tạo được, trả về nghiệm ngẫu nhiên
-        rng = RandomNumberGenerator(seed=12345)
-        return Solution.make_random(data, rng)
+    except Exception as exc:
+        # Không che giấu lỗi crossover bằng cách âm thầm thay nghiệm ngẫu nhiên.
+        raise ValueError(f'Không thể dựng Solution từ offspring routes: {exc}') from exc
 
 
 def evaluate_single_run(
@@ -210,12 +208,11 @@ def evaluate_single_run(
             iteration += 1
 
             # (a) Gọi hàm select_parents do LLM sinh ra
-            try:
-                p1, p2 = select_parents_func(population, rng, cost_eval)
-            except Exception:
-                # Fallback nếu select_parents crash
-                p1 = population[0]
-                p2 = population[min(1, len(population) - 1)]
+            # Không fallback âm thầm về hai cá thể tốt nhất: heuristic lỗi thì
+            # lần đánh giá phải thất bại, tránh thưởng cho code không hợp lệ.
+            p1, p2 = select_parents_func(population, rng, cost_eval)
+            if p1 not in population or p2 not in population:
+                raise ValueError('select_parents phải trả về hai nghiệm thuộc population.')
 
             # (b) Crossover: tạo con cái
             routes1 = extract_routes_as_lists(p1)
@@ -249,7 +246,8 @@ def evaluate_single_run(
         if feasible_sols:
             return min(cost_eval.penalised_cost(s) for s in feasible_sols)
         else:
-            return cost_eval.penalised_cost(population[0]) * 1.5
+            # Không tự đặt hệ số phạt 1.5 không có căn cứ.
+            return float('inf')
 
     except Exception as e:
         print(f"    [Fitness] Lỗi khi chạy GA: {e}")
