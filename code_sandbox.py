@@ -155,6 +155,10 @@ def quick_smoke_test(func, data, rng_class, cost_eval_class, solution_class) -> 
 
         p1, p2 = result
         if not any(p1 is sol for sol in population) or not any(p2 is sol for sol in population):
+            return False, 'Hai parent phải thuộc population đầu vào.'
+        if len(population) > 1 and p1 is p2:
+            return False, 'Hai parent phải khác nhau khi có ít nhất hai nghiệm.'
+        if not any(p1 is sol for sol in population) or not any(p2 is sol for sol in population):
             return False, 'Hai parent phải là phần tử thuộc population đầu vào.'
         if len(population) > 1 and p1 is p2:
             return False, 'Hai parent phải khác nhau khi population có ít nhất hai nghiệm.'
