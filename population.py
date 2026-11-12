@@ -99,10 +99,10 @@ class Population:
         else:
             # Chọn cá thể ở vị trí giữa hoặc cuối để tạo sự đa dạng
             import random
-            random.seed(rng_seed)
+            local_rng = random.Random(rng_seed)
             # Ưu tiên nửa dưới nhưng vẫn có cơ hội chọn nửa trên
             mid = max(1, n // 3)
-            parent2 = random.choice(sorted_pop[mid:])
+            parent2 = local_rng.choice(sorted_pop[mid:])
 
         return parent1, parent2
 
