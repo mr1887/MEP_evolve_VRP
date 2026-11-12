@@ -75,79 +75,55 @@ def extract_routes_as_lists(solution: Solution) -> List[List[int]]:
 
 def order_crossover(parent1_routes, parent2_routes, num_clients, py_rng):
     """
-    Order Crossover (OX) đơn giản giữa 2 nghiệm VRP.
-
-    Cách hoạt động:
-    1. Trải phẳng cả 2 lộ trình cha mẹ thành danh sách khách hàng
-    2. Chọn ngẫu nhiên một đoạn từ parent1
-    3. Điền phần còn lại theo thứ tự của parent2
-    4. Cắt lại thành các tuyến có kích thước tương tự parent1
-
-    Trả về:
-        Danh sách các tuyến (list[list[int]]) cho con cái
+    Order crossover trên hoán vị khách hàng; cấu trúc tuyến được chia lại
+    theo độ dài tuyến của parent 1. Đây vẫn là crossover của evaluator GA
+    thử nghiệm, không phải crossover HGS trong bài báo.
     """
-    # Trải phẳng thành chuỗi khách hàng
-    flat1 = []
-    for r in parent1_routes:
-        flat1.extend(r)
-
-    flat2 = []
-    for r in parent2_routes:
-        flat2.extend(r)
+    flat1 = [client for route in parent1_routes for client in route]
+    flat2 = [client for route in parent2_routes for client in route]
 
     if not flat1 or not flat2:
-        return parent1_routes if parent1_routes else parent2_routes
+        raise ValueError("Không thể crossover nghiệm không có khách hàng.")
 
-    # Đảm bảo cả 2 có cùng tập khách hàng
-    all_clients = set(flat1) | set(flat2)
-
-    # Thêm khách hàng thiếu vào cuối mỗi flat
-    missing_in_1 = list(all_clients - set(flat1))
-    missing_in_2 = list(all_clients - set(flat2))
-    flat1.extend(missing_in_1)
-    flat2.extend(missing_in_2)
+    # Hai nghiệm của cùng một instance phải biểu diễn cùng một tập khách hàng,
+    # mỗi khách hàng xuất hiện đúng một lần.
+    if len(flat1) != len(flat2) or len(set(flat1)) != len(flat1):
+        raise ValueError("Parent 1 không phải một hoán vị khách hàng hợp lệ.")
+    if len(set(flat2)) != len(flat2) or set(flat1) != set(flat2):
+        raise ValueError("Hai parent không chứa cùng một tập khách hàng duy nhất.")
 
     n = len(flat1)
     if n <= 2:
-        return parent1_routes
+        child = flat1[:]
+    else:
+        cut1 = py_rng.randint(0, n - 2)
+        cut2 = py_rng.randint(cut1 + 1, n)
 
-    # Chọn đoạn cắt từ parent1
-    cut1 = py_rng.randint(0, n - 2)
-    cut2 = py_rng.randint(cut1 + 1, n)
+        child = [None] * n
+        child[cut1:cut2] = flat1[cut1:cut2]
+        segment = set(flat1[cut1:cut2])
 
-    # Phần giữ lại từ parent1
-    child = [None] * n
-    segment = flat1[cut1:cut2]
-    segment_set = set(segment)
-    for i, val in enumerate(segment):
-        child[cut1 + i] = val
+        # OX chuẩn: điền các gene còn thiếu theo thứ tự parent 2,
+        # bắt đầu từ vị trí ngay sau đoạn được giữ lại (có wrap-around).
+        fill_values = [x for x in flat2 if x not in segment]
+        positions = list(range(cut2, n)) + list(range(0, cut1))
+        for pos, value in zip(positions, fill_values):
+            child[pos] = value
 
-    # Điền phần còn lại theo thứ tự parent2
-    remaining = [c for c in flat2 if c not in segment_set]
-    r_idx = 0
-    for i in range(n):
-        if child[i] is None:
-            if r_idx < len(remaining):
-                child[i] = remaining[r_idx]
-                r_idx += 1
+        if any(value is None for value in child):
+            raise RuntimeError("OX tạo offspring chưa hoàn chỉnh.")
 
-    # Loại bỏ None còn sót (nếu có)
-    child = [c for c in child if c is not None]
-
-    # Cắt lại thành tuyến theo kích thước gần giống parent1
+    # Tách hoán vị thành các tuyến theo độ dài của parent 1.
     result_routes = []
     idx = 0
-    for r in parent1_routes:
-        route_len = len(r)
-        route = child[idx:idx + route_len]
-        if route:
-            result_routes.append(route)
+    for route in parent1_routes:
+        route_len = len(route)
+        if route_len:
+            result_routes.append(child[idx:idx + route_len])
         idx += route_len
 
-    # Thêm phần dư (nếu có)
-    if idx < len(child):
-        result_routes.append(child[idx:])
-
+    if idx != len(child):
+        raise RuntimeError("Không thể phân chia hết khách hàng thành các tuyến.")
     return result_routes
 
 
